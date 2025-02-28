@@ -148,8 +148,7 @@ impl CertificatePool {
                 }
             }
             Vote::Skip(skip_range) => {
-                let old_highest_skip_certificate_slot =
-                    *self.skip_pool.max_skip_certificate_range().end();
+                let old_highest_skip_certificate_slot = self.highest_skip_slot();
                 self.skip_pool.add_vote(
                     validator_vote_key,
                     skip_range,
@@ -157,8 +156,7 @@ impl CertificatePool {
                     validator_stake,
                     total_stake,
                 )?;
-                let highest_skip_certificate_slot =
-                    *self.skip_pool.max_skip_certificate_range().end();
+                let highest_skip_certificate_slot = self.highest_skip_slot();
                 if old_highest_skip_certificate_slot != highest_skip_certificate_slot {
                     return Ok(Some(NewHighestCertificate::Skip(
                         highest_skip_certificate_slot,
@@ -207,12 +205,16 @@ impl CertificatePool {
         )
     }
 
-    pub fn highest_unskipped_certificate_slot(&self) -> Slot {
+    pub fn highest_not_skip_certificate(&self) -> Slot {
         self.highest_finalized_slot.max(self.highest_notarized_slot)
     }
 
     pub fn highest_notarized_slot(&self) -> Slot {
         self.highest_notarized_slot
+    }
+
+    pub fn highest_skip_slot(&self) -> Slot {
+        *self.skip_pool.max_skip_certificate_range().end()
     }
 
     pub fn highest_finalized_slot(&self) -> Slot {
