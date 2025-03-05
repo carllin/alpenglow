@@ -10,6 +10,7 @@ use {
     agave_banking_stage_ingress_types::BankingPacketBatch,
     crossbeam_channel::{unbounded, Receiver, RecvTimeoutError, Select, Sender},
     log::*,
+    solana_feature_set,
     solana_gossip::{
         cluster_info::{ClusterInfo, GOSSIP_SLEEP_MILLIS},
         crds::Cursor,
@@ -333,12 +334,18 @@ impl ClusterInfoVoteListener {
         let mut last_process_root = Instant::now();
         let duplicate_confirmed_slot_sender = Some(duplicate_confirmed_slot_sender);
         let mut vote_processing_time = Some(VoteProcessingTiming::default());
+        let mut first_alpenglow_slot = None;
         loop {
             if exit.load(Ordering::Relaxed) {
                 return Ok(());
             }
 
             let root_bank = bank_hash_cache.get_root_bank_and_prune_cache();
+            if first_alpenglow_slot.is_none() {
+                first_alpenglow_slot = root_bank
+                    .feature_set
+                    .activated_slot(&solana_feature_set::secp256k1_program_enabled::id());
+            }
             if last_process_root.elapsed().as_millis() > DEFAULT_MS_PER_SLOT as u128 {
                 let unrooted_optimistic_slots = confirmation_verifier
                     .verify_for_unrooted_optimistic_slots(&root_bank, &blockstore);
@@ -367,6 +374,7 @@ impl ClusterInfoVoteListener {
                 &mut latest_vote_slot_per_validator,
                 bank_hash_cache,
                 &dumped_slot_subscription,
+                first_alpenglow_slot,
             );
             match confirmed_slots {
                 Ok(confirmed_slots) => {
@@ -401,6 +409,7 @@ impl ClusterInfoVoteListener {
         latest_vote_slot_per_validator: &mut HashMap<Pubkey, Slot>,
         bank_hash_cache: &mut BankHashCache,
         dumped_slot_subscription: &Mutex<bool>,
+        first_alpenglow_slot: Option<Slot>,
     ) -> Result<ThresholdConfirmedSlots> {
         let mut sel = Select::new();
         sel.recv(gossip_vote_txs_receiver);
@@ -433,6 +442,7 @@ impl ClusterInfoVoteListener {
                     latest_vote_slot_per_validator,
                     bank_hash_cache,
                     dumped_slot_subscription,
+                    first_alpenglow_slot,
                 ));
             }
             remaining_wait_time = remaining_wait_time.saturating_sub(start.elapsed());
@@ -458,6 +468,7 @@ impl ClusterInfoVoteListener {
         latest_vote_slot_per_validator: &mut HashMap<Pubkey, Slot>,
         bank_hash_cache: &mut BankHashCache,
         dumped_slot_subscription: &Mutex<bool>,
+        first_alpenglow_slot: Option<Slot>,
     ) {
         if vote.is_empty() {
             return;
@@ -535,20 +546,23 @@ impl ClusterInfoVoteListener {
                     let _ = gossip_verified_vote_hash_sender.send((*vote_pubkey, slot, hash));
                 }
 
-                if reached_threshold_results[0] {
-                    if let Some(sender) = duplicate_confirmed_slot_sender {
-                        let _ = sender.send(vec![(slot, hash)]);
+                // Alpenglow slots should not need duplicate confirmed or optimistic confirmation
+                if slot < first_alpenglow_slot.unwrap_or(Slot::MAX) {
+                    if reached_threshold_results[0] {
+                        if let Some(sender) = duplicate_confirmed_slot_sender {
+                            let _ = sender.send(vec![(slot, hash)]);
+                        }
                     }
-                }
-                if reached_threshold_results[1] {
-                    new_optimistic_confirmed_slots.push((slot, hash));
-                    // Notify subscribers about new optimistic confirmation
-                    if let Some(sender) = bank_notification_sender {
-                        sender
-                            .send(BankNotification::OptimisticallyConfirmed(slot))
-                            .unwrap_or_else(|err| {
-                                warn!("bank_notification_sender failed: {:?}", err)
-                            });
+                    if reached_threshold_results[1] {
+                        new_optimistic_confirmed_slots.push((slot, hash));
+                        // Notify subscribers about new optimistic confirmation
+                        if let Some(sender) = bank_notification_sender {
+                            sender
+                                .send(BankNotification::OptimisticallyConfirmed(slot))
+                                .unwrap_or_else(|err| {
+                                    warn!("bank_notification_sender failed: {:?}", err)
+                                });
+                        }
                     }
                 }
 
@@ -608,6 +622,7 @@ impl ClusterInfoVoteListener {
         latest_vote_slot_per_validator: &mut HashMap<Pubkey, Slot>,
         bank_hash_cache: &mut BankHashCache,
         dumped_slot_subscription: &Mutex<bool>,
+        first_alpenglow_slot: Option<Slot>,
     ) -> ThresholdConfirmedSlots {
         let mut diff: HashMap<Slot, HashMap<Pubkey, bool>> = HashMap::new();
         let mut new_optimistic_confirmed_slots = vec![];
@@ -637,6 +652,7 @@ impl ClusterInfoVoteListener {
                 latest_vote_slot_per_validator,
                 bank_hash_cache,
                 dumped_slot_subscription,
+                first_alpenglow_slot,
             );
         }
         gossip_vote_txn_processing_time.stop();
@@ -928,6 +944,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         )
         .unwrap();
 
@@ -1022,6 +1039,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         )
         .unwrap();
 
@@ -1192,6 +1210,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         )
         .unwrap();
 
@@ -1305,6 +1324,7 @@ mod tests {
                     &mut latest_vote_slot_per_validator,
                     &mut bank_hash_cache,
                     &Mutex::new(false),
+                    None,
                 );
             }
             let slot_vote_tracker = vote_tracker.get_slot_vote_tracker(vote_slot).unwrap();
@@ -1402,6 +1422,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         );
 
         // Setup next epoch
@@ -1451,6 +1472,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         );
     }
 
@@ -1675,6 +1697,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         );
         assert_eq!(diff.keys().copied().sorted().collect_vec(), vec![1, 2, 6]);
 
@@ -1708,6 +1731,7 @@ mod tests {
             &mut latest_vote_slot_per_validator,
             &mut bank_hash_cache,
             &Mutex::new(false),
+            None,
         );
         assert_eq!(diff.keys().copied().sorted().collect_vec(), vec![7, 8]);
     }
