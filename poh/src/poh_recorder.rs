@@ -23,6 +23,7 @@ use {
         entry::{hash_transactions, Entry},
         poh::Poh,
     },
+    solana_feature_set,
     solana_hash::Hash,
     solana_ledger::{blockstore::Blockstore, leader_schedule_cache::LeaderScheduleCache},
     solana_measure::measure_us,
@@ -1127,7 +1128,7 @@ impl PohRecorder {
         }
     }
 
-    pub fn tick_alpenglow(&mut self, slot_max_tick_height: u64) {
+    pub fn tick_alpenglow(&mut self, bank: &Bank, slot_max_tick_height: u64) {
         let (poh_entry, tick_lock_contention_us) = measure_us!({
             let mut poh_l = self.poh.lock().unwrap();
             poh_l.tick()
@@ -1138,8 +1139,17 @@ impl PohRecorder {
             self.tick_height = slot_max_tick_height;
             self.report_poh_timing_point();
 
-            // Should be empty in most cases, but reset just to be safe
-            self.tick_cache = vec![];
+            // Unless this is the first alpenglow slot we're making, this cache should
+            // be empty.
+            if let Some(first_alpenglow_slot) = self
+                .start_bank
+                .feature_set
+                .activated_slot(&solana_feature_set::secp256k1_program_enabled::id())
+            {
+                if bank.parent_slot() >= first_alpenglow_slot {
+                    assert!(self.tick_cache.is_empty());
+                }
+            }
             self.tick_cache.push((
                 Entry {
                     num_hashes: poh_entry.num_hashes,
@@ -1155,7 +1165,15 @@ impl PohRecorder {
     }
 
     pub fn migrate_to_alpenglow_poh(&mut self) {
-        self.tick_cache = vec![];
+        // Keep around ticks up to the first alpenglow slot
+        let first_alpenglow_slot = self
+            .start_bank
+            .feature_set
+            .activated_slot(&solana_feature_set::secp256k1_program_enabled::id())
+            .expect("feature should have been enabled");
+        let num_expected_ticks =
+            (first_alpenglow_slot - self.start_bank.slot() + 1) * self.start_bank.ticks_per_slot();
+        self.tick_cache.truncate(num_expected_ticks as usize);
         {
             let mut poh = self.poh.lock().unwrap();
             // sets PoH to low power mode

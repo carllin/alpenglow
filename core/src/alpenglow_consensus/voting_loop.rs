@@ -909,7 +909,7 @@ impl VotingLoop {
 
     /// Send an alpenglow vote
     /// `bank` will be used for:
-    /// - startup verifiation
+    /// - startup verification
     /// - vote account checks
     /// - authorized voter checks
     /// - selecting the blockhash to sign with

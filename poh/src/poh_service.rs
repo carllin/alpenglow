@@ -255,7 +255,7 @@ impl PohService {
                 poh_recorder
                     .write()
                     .unwrap()
-                    .tick_alpenglow(bank.max_tick_height());
+                    .tick_alpenglow(bank, bank.max_tick_height());
                 current_leader_bank = None;
             }
             Self::read_record_receiver_and_process(
