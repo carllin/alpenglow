@@ -260,7 +260,9 @@ impl VotingLoop {
                     ("vote_history_len", voting_context.vote_history.len(), i64),
                     ("voting_sender_len", voting_context.voting_sender.len(), i64),
                     ("commitment_sender_len", voting_context.commitment_sender.len(), i64),
-                    ("cert_pool_len", cert_pool.len(), i64),
+                    ("cert_pool_vote_pools_len", cert_pool.len_vote_pools(), i64),
+                    ("cert_pool_completed_certs_len", cert_pool.len_completed_certs(), i64),
+                    ("cert_pool_parent_ready_tracker_len", cert_pool.len_parent_ready_tracker(), i64),
                     ("pending_blocks_len", pending_blocks.len(), i64),
                     ("voted_signatures_len", voting_context.voted_signatures.len(), i64),
                 );

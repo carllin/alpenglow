@@ -95,10 +95,18 @@ pub struct CertificatePool<VC: VoteCertificate> {
 }
 
 impl<VC: VoteCertificate> CertificatePool<VC> {
-    pub fn len(&self) -> usize {
-        self.vote_pools.len() + self.completed_certificates.len() + self.parent_ready_tracker.len()
+    pub fn len_vote_pools(&self) -> usize {
+        self.vote_pools.len()
     }
-    
+
+    pub fn len_completed_certs(&self) -> usize {
+        self.completed_certificates.len()
+    }
+
+    pub fn len_parent_ready_tracker(&self) -> usize {
+        self.parent_ready_tracker.len()
+    }
+
     pub fn new_from_root_bank(
         my_pubkey: Pubkey,
         bank: &Bank,
