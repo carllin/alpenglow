@@ -315,14 +315,14 @@ impl PohRecorderMetrics {
 pub struct PohRecorder {
     pub poh: Arc<Mutex<Poh>>,
     tick_height: u64,
-    clear_bank_signal: Option<Sender<bool>>,
+    pub clear_bank_signal: Option<Sender<bool>>,
     start_bank: Arc<Bank>, // parent slot
-    start_bank_active_descendants: Vec<Slot>,
+    pub start_bank_active_descendants: Vec<Slot>,
     start_tick_height: u64, // first tick_height this recorder will observe
-    tick_cache: Vec<(Entry, u64)>, // cache of entry and its tick_height
+    pub tick_cache: Vec<(Entry, u64)>, // cache of entry and its tick_height
     working_bank: Option<WorkingBank>,
-    working_bank_sender: Sender<WorkingBankEntry>,
-    poh_timing_point_sender: Option<PohTimingSender>,
+    pub working_bank_sender: Sender<WorkingBankEntry>,
+    pub poh_timing_point_sender: Option<PohTimingSender>,
     leader_first_tick_height: Option<u64>,
     leader_last_tick_height: u64, // zero if none
     grace_ticks: u64,
@@ -331,8 +331,8 @@ pub struct PohRecorder {
     ticks_per_slot: u64,
     target_ns_per_tick: u64,
     metrics: PohRecorderMetrics,
-    record_sender: Sender<Record>,
-    leader_bank_notifier: Arc<LeaderBankNotifier>,
+    pub record_sender: Sender<Record>,
+    pub leader_bank_notifier: Arc<LeaderBankNotifier>,
     delay_leader_block_for_pending_fork: bool,
     last_reported_slot_for_pending_fork: Arc<Mutex<Slot>>,
     pub is_exited: Arc<AtomicBool>,

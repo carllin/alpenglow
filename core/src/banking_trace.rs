@@ -49,14 +49,14 @@ pub const BANKING_TRACE_DIR_DEFAULT_BYTE_LIMIT: DirByteLimit =
     TRACE_FILE_DEFAULT_ROTATE_BYTE_THRESHOLD * TRACE_FILE_ROTATE_COUNT;
 
 #[derive(Clone, Debug)]
-struct ActiveTracer {
-    trace_sender: Sender<TimedTracedEvent>,
+pub struct ActiveTracer {
+    pub trace_sender: Sender<TimedTracedEvent>,
     exit: Arc<AtomicBool>,
 }
 
 #[derive(Debug)]
 pub struct BankingTracer {
-    active_tracer: Option<ActiveTracer>,
+    pub active_tracer: Option<ActiveTracer>,
 }
 
 #[cfg_attr(

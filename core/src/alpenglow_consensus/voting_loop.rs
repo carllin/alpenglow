@@ -248,8 +248,26 @@ impl VotingLoop {
             my_pubkey,
         };
 
+        let mut last_stats_report = Instant::now();
+
         // TODO(ashwin): Start loop once migration is complete current_slot from vote history
         loop {
+            if last_stats_report.elapsed() > Duration::from_secs(10) {
+                // Report stats every 10 seconds
+                datapoint_info!(
+                    "alpenglow_voting_loop",
+                    ("progress_map_len", shared_context.progress.len(), i64),
+                    ("vote_history_len", voting_context.vote_history.len(), i64),
+                    ("voting_sender_len", voting_context.voting_sender.len(), i64),
+                    ("commitment_sender_len", voting_context.commitment_sender.len(), i64),
+                    ("cert_pool_len", cert_pool.len(), i64),
+                    ("pending_blocks_len", pending_blocks.len(), i64),
+                    ("voted_signatures_len", voting_context.voted_signatures.len(), i64),
+                );
+
+                last_stats_report = Instant::now();
+            }
+
             let leader_end_slot = last_of_consecutive_leader_slots(current_slot);
 
             let Some(leader_pubkey) = leader_schedule_cache

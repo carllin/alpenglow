@@ -193,7 +193,37 @@ pub fn start_loop(config: BlockCreationLoopConfig) {
         start_receive_and_record_loop(exit_c, p_rec, record_receiver);
     });
 
+    let mut last_stats_report = Instant::now();
+
     while !exit.load(Ordering::Relaxed) {
+        if last_stats_report.elapsed() > Duration::from_secs(10) {
+            let bank_forks_rl = ctx.bank_forks.read().unwrap();
+            let trace_channel_len = match &ctx.banking_tracer.active_tracer {
+                Some(tracer) => tracer.trace_sender.len(),
+                None => 0,
+            };
+            let poh_recorder_rl = ctx.poh_recorder.read().unwrap();
+            let clear_bank_signal_channel_len = match &poh_recorder_rl.clear_bank_signal {
+                Some(signal) => signal.len(),
+                None => 0,
+            };
+            // Report stats every 10 seconds
+            datapoint_info!(
+                "alpenglow_consensus_block_creation_loop",
+                ("num_banks", bank_forks_rl.len(), i64),
+                ("num_descendants", bank_forks_rl.descendants_num(), i64),
+                ("trace_channel_len", trace_channel_len, i64),
+                ("clear_bank_signal_channel_len", clear_bank_signal_channel_len, i64),
+                ("start_bank_active_descendants", poh_recorder_rl.start_bank_active_descendants.len(), i64),
+                ("tick_cache_len", poh_recorder_rl.tick_cache.len(), i64),
+                ("working_bank_sender_len", poh_recorder_rl.working_bank_sender.len(), i64),
+                ("poh_timing_point_sender_len", poh_recorder_rl.poh_timing_point_sender.as_ref().map_or(0, |s| s.len()), i64),
+                ("record_sender_len", poh_recorder_rl.record_sender.len(), i64),
+            );
+
+            last_stats_report = Instant::now();
+        }
+
         // Wait for the voting loop to notify us
         let LeaderWindowInfo {
             start_slot,

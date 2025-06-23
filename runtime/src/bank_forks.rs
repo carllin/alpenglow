@@ -176,6 +176,10 @@ impl BankForks {
         self.descendants.clone()
     }
 
+    pub fn descendants_num(&self) -> usize {
+        self.descendants.len()
+    }
+
     pub fn frozen_banks(&self) -> HashMap<Slot, Arc<Bank>> {
         self.banks
             .iter()
