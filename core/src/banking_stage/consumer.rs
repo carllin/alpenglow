@@ -683,9 +683,9 @@ impl Consumer {
                 })
                 .collect_vec());
 
-        info!("#BW: execute_and_commit_transactions_locked acquiring freeze lock for bank: {}", bank.slot());
+        //info!("#BW: execute_and_commit_transactions_locked acquiring freeze lock for bank: {}", bank.slot());
         let (freeze_lock, freeze_lock_us) = measure_us!(bank.freeze_lock());
-        info!("#BW: execute_and_commit_transactions_locked acquired freeze lock for bank: {}", bank.slot());
+        //info!("#BW: execute_and_commit_transactions_locked acquired freeze lock for bank: {}", bank.slot());
         execute_and_commit_timings.freeze_lock_us = freeze_lock_us;
 
         let (record_transactions_summary, record_us) = measure_us!(self
@@ -740,7 +740,7 @@ impl Consumer {
             };
 
         drop(freeze_lock);
-        info!("#BW: execute_and_commit_transactions_locked dropped freeze lock for bank: {}", bank.slot());
+        //info!("#BW: execute_and_commit_transactions_locked dropped freeze lock for bank: {}", bank.slot());
 
         debug!(
             "bank: {} process_and_record_locked: {}us record: {}us commit: {}us txs_len: {}",

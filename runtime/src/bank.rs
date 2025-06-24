@@ -3000,16 +3000,16 @@ impl Bank {
     fn register_recent_blockhash(&self, blockhash: &Hash, scheduler: &InstalledSchedulerRwLock) {
         // This is needed because recent_blockhash updates necessitate synchronizations for
         // consistent tx check_age handling.
-        info!("#BW: waiting for paused scheduler");
+        //info!("#BW: waiting for paused scheduler");
         BankWithScheduler::wait_for_paused_scheduler(self, scheduler);
-        info!("#BW: scheduler paused");
+        //info!("#BW: scheduler paused");
 
         // Only acquire the write lock for the blockhash queue on block boundaries because
         // readers can starve this write lock acquisition and ticks would be slowed down too
         // much if the write lock is acquired for each tick.
-        info!("#BW: acquiring blockhash queue write lock");
+        //info!("#BW: acquiring blockhash queue write lock");
         let mut w_blockhash_queue = self.blockhash_queue.write().unwrap();
-        info!("#BW: acquired blockhash queue write lock");
+        //info!("#BW: acquired blockhash queue write lock");
 
         /*#[cfg(feature = "dev-context-only-utils")]
         let blockhash_override = self
@@ -4615,7 +4615,7 @@ impl Bank {
             timings,
         );
         drop(freeze_lock);
-        info!("#BW execute_batch dropped the freeze lock");
+        //info!("#BW execute_batch dropped the freeze lock");
         let post_balances = if collect_balances {
             self.collect_balances(batch)
         } else {

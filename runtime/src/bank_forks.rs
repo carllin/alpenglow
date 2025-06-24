@@ -110,7 +110,7 @@ impl BankForksT {
 }
 
 pub struct BankForks {
-    banks: HashMap<Slot, BankWithScheduler>,
+    pub banks: HashMap<Slot, BankWithScheduler>,
     descendants: HashMap<Slot, HashSet<Slot>>,
     root: Arc<AtomicSlot>,
 

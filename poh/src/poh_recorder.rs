@@ -495,9 +495,9 @@ impl PohRecorder {
                 return Err(PohRecorderError::MaxHeightReached);
             }
 
-            info!("#BW: PohRecorder::record: acquiring poh lock for slot {}", bank_slot);
+            //info!("#BW: PohRecorder::record: acquiring poh lock for slot {}", bank_slot);
             let (mut poh_lock, poh_lock_us) = measure_us!(self.poh.lock().unwrap());
-            info!("#BW: PohRecorder::record: acquired poh lock for slot {}", bank_slot);
+            //info!("#BW: PohRecorder::record: acquired poh lock for slot {}", bank_slot);
             self.metrics.record_lock_contention_us += poh_lock_us;
 
             let (record_mixin_res, record_mixin_us) = measure_us!(poh_lock.record(mixin));

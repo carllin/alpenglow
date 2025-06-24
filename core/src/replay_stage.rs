@@ -4413,10 +4413,15 @@ impl ReplayStage {
         tbft_structs: Option<&mut TowerBFTStructures>,
         requester_id: usize,
     ) -> Result<(), SetRootError> {
-        bank_forks
-            .read(requester_id)
-            .unwrap()
-            .prune_program_cache(new_root);
+        let bf_rl = bank_forks.read(requester_id).unwrap();
+        if let Some(root_bank) = bf_rl.banks.get(&new_root) {
+            let x = root_bank.clone_without_scheduler();
+            drop(bf_rl);
+            x.prune_program_cache(new_root, x.epoch());
+        } else {
+            drop(bf_rl);
+        };
+
         let removed_banks = bank_forks.write(requester_id).unwrap().set_root(
             new_root,
             accounts_background_request_sender,
