@@ -23,8 +23,8 @@ use {
         collections::{hash_map::Entry, HashMap, HashSet},
         ops::Index,
         sync::{
-            atomic::{AtomicBool, AtomicU64, Ordering},
-            Arc, RwLock,
+            atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
+            Arc, RwLock, RwLockReadGuard, RwLockWriteGuard,
         },
         time::Instant,
     },
@@ -70,6 +70,43 @@ struct SetRootTimings {
     drop_parent_banks_ms: i64,
     prune_slots_ms: i64,
     prune_remove_ms: i64,
+}
+
+// 1 = block_creation_loop
+// 2 = voting_loop
+// 3 = replay_stage
+pub struct BankForksT {
+    pub bank_forks: Arc<RwLock<BankForks>>,
+    pub last_read_lock_holder: AtomicUsize,
+    pub last_write_lock_holder: AtomicUsize,
+}
+
+impl BankForksT {
+    pub fn new(bank_forks: Arc<RwLock<BankForks>>) -> Self {
+        Self {
+            bank_forks,
+            last_read_lock_holder: AtomicUsize::new(0),
+            last_write_lock_holder: AtomicUsize::new(0),
+        }
+    }
+
+    pub fn read(&self, requester_id: usize) -> Result<RwLockReadGuard<'_, BankForks>, ()> {
+        info!("#BW: BankForksT::read() called by requester_id={requester_id}");
+        let rl = self.bank_forks.read().unwrap();
+        info!("#BW: BankForksT::read() lock acquired by requester_id={requester_id}");
+        self.last_read_lock_holder
+            .store(requester_id, Ordering::Relaxed);
+        Ok(rl)
+    }
+
+    pub fn write(&self, requester_id: usize) -> Result<RwLockWriteGuard<'_, BankForks>, ()> {
+        info!("#BW: BankForksT::write() called by requester_id={requester_id}");
+        let wl = self.bank_forks.write().unwrap();
+        info!("#BW: BankForksT::write() lock acquired by requester_id={requester_id}");
+        self.last_write_lock_holder
+            .store(requester_id, Ordering::Relaxed);
+        Ok(wl)
+    }
 }
 
 pub struct BankForks {

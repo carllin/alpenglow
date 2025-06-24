@@ -18,7 +18,7 @@ use {
     solana_rpc::{rpc_subscriptions::RpcSubscriptions, slot_status_notifier::SlotStatusNotifier},
     solana_runtime::{
         bank::{Bank, NewBankOptions},
-        bank_forks::BankForks,
+        bank_forks::BankForksT,
     },
     solana_sdk::{clock::Slot, pubkey::Pubkey},
     std::{
@@ -39,7 +39,7 @@ pub struct BlockCreationLoopConfig {
     pub track_transaction_indexes: bool,
 
     // Shared state
-    pub bank_forks: Arc<RwLock<BankForks>>,
+    pub bank_forks: Arc<BankForksT>,
     pub blockstore: Arc<Blockstore>,
     pub cluster_info: Arc<ClusterInfo>,
     pub poh_recorder: Arc<RwLock<PohRecorder>>,
@@ -61,7 +61,7 @@ struct LeaderContext {
     blockstore: Arc<Blockstore>,
     poh_recorder: Arc<RwLock<PohRecorder>>,
     leader_schedule_cache: Arc<LeaderScheduleCache>,
-    bank_forks: Arc<RwLock<BankForks>>,
+    bank_forks: Arc<BankForksT>,
     rpc_subscriptions: Arc<RpcSubscriptions>,
     slot_status_notifier: Option<SlotStatusNotifier>,
     banking_tracer: Arc<BankingTracer>,
@@ -184,7 +184,7 @@ pub fn start_loop(config: BlockCreationLoopConfig) {
     };
 
     // Setup poh
-    reset_poh_recorder(&ctx.bank_forks.read().unwrap().working_bank(), &ctx);
+    reset_poh_recorder(&ctx.bank_forks.read(1).unwrap().working_bank(), &ctx);
 
     // Start receive and record loop
     let exit_c = exit.clone();
@@ -197,7 +197,7 @@ pub fn start_loop(config: BlockCreationLoopConfig) {
 
     while !exit.load(Ordering::Relaxed) {
         if last_stats_report.elapsed() > Duration::from_secs(10) {
-            let bank_forks_rl = ctx.bank_forks.read().unwrap();
+            let bank_forks_rl = ctx.bank_forks.read(1).unwrap();
             let trace_channel_len = match &ctx.banking_tracer.active_tracer {
                 Some(tracer) => tracer.trace_sender.len(),
                 None => 0,
@@ -213,12 +213,35 @@ pub fn start_loop(config: BlockCreationLoopConfig) {
                 ("num_banks", bank_forks_rl.len(), i64),
                 ("num_descendants", bank_forks_rl.descendants_num(), i64),
                 ("trace_channel_len", trace_channel_len, i64),
-                ("clear_bank_signal_channel_len", clear_bank_signal_channel_len, i64),
-                ("start_bank_active_descendants", poh_recorder_rl.start_bank_active_descendants.len(), i64),
+                (
+                    "clear_bank_signal_channel_len",
+                    clear_bank_signal_channel_len,
+                    i64
+                ),
+                (
+                    "start_bank_active_descendants",
+                    poh_recorder_rl.start_bank_active_descendants.len(),
+                    i64
+                ),
                 ("tick_cache_len", poh_recorder_rl.tick_cache.len(), i64),
-                ("working_bank_sender_len", poh_recorder_rl.working_bank_sender.len(), i64),
-                ("poh_timing_point_sender_len", poh_recorder_rl.poh_timing_point_sender.as_ref().map_or(0, |s| s.len()), i64),
-                ("record_sender_len", poh_recorder_rl.record_sender.len(), i64),
+                (
+                    "working_bank_sender_len",
+                    poh_recorder_rl.working_bank_sender.len(),
+                    i64
+                ),
+                (
+                    "poh_timing_point_sender_len",
+                    poh_recorder_rl
+                        .poh_timing_point_sender
+                        .as_ref()
+                        .map_or(0, |s| s.len()),
+                    i64
+                ),
+                (
+                    "record_sender_len",
+                    poh_recorder_rl.record_sender.len(),
+                    i64
+                ),
             );
 
             last_stats_report = Instant::now();
@@ -414,11 +437,11 @@ fn maybe_start_leader(
     parent_slot: Slot,
     ctx: &LeaderContext,
 ) -> Result<(), StartLeaderError> {
-    if ctx.bank_forks.read().unwrap().get(slot).is_some() {
+    if ctx.bank_forks.read(1).unwrap().get(slot).is_some() {
         return Err(StartLeaderError::AlreadyHaveBank(slot));
     }
 
-    let Some(parent_bank) = ctx.bank_forks.read().unwrap().get(parent_slot) else {
+    let Some(parent_bank) = ctx.bank_forks.read(1).unwrap().get(parent_slot) else {
         return Err(StartLeaderError::ReplayIsBehind(parent_slot));
     };
 
@@ -445,7 +468,7 @@ fn maybe_start_leader(
 /// parent `parent_bank`
 fn create_and_insert_leader_bank(slot: Slot, parent_bank: Arc<Bank>, ctx: &LeaderContext) {
     let parent_slot = parent_bank.slot();
-    let root_slot = ctx.bank_forks.read().unwrap().root();
+    let root_slot = ctx.bank_forks.read(1).unwrap().root();
 
     if let Some(bank) = ctx.poh_recorder.read().unwrap().bank() {
         panic!(
@@ -483,7 +506,7 @@ fn create_and_insert_leader_bank(slot: Slot, parent_bank: Arc<Bank>, ctx: &Leade
     );
 
     // Insert the bank
-    let tpu_bank = ctx.bank_forks.write().unwrap().insert(tpu_bank);
+    let tpu_bank = ctx.bank_forks.write(1).unwrap().insert(tpu_bank);
     let poh_bank_start = ctx
         .poh_recorder
         .write()

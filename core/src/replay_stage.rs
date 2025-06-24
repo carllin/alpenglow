@@ -73,7 +73,7 @@ use {
     solana_runtime::{
         accounts_background_service::AbsRequestSender,
         bank::{bank_hash_details, Bank, NewBankOptions},
-        bank_forks::{BankForks, SetRootError, MAX_ROOT_DISTANCE_FOR_VOTE_ONLY},
+        bank_forks::{BankForks, BankForksT, SetRootError, MAX_ROOT_DISTANCE_FOR_VOTE_ONLY},
         commitment::BlockCommitmentCache,
         installed_scheduler_pool::BankWithScheduler,
         prioritization_fee_cache::PrioritizationFeeCache,
@@ -274,7 +274,7 @@ pub struct ReplayStageConfig {
     pub replay_forks_threads: NonZeroUsize,
     pub replay_transactions_threads: NonZeroUsize,
     pub blockstore: Arc<Blockstore>,
-    pub bank_forks: Arc<RwLock<BankForks>>,
+    pub bank_forks_t: Arc<BankForksT>,
     pub cluster_info: Arc<ClusterInfo>,
     pub poh_recorder: Arc<RwLock<PohRecorder>>,
     pub tower: Tower,
@@ -578,7 +578,7 @@ impl ReplayStage {
             replay_forks_threads,
             replay_transactions_threads,
             blockstore,
-            bank_forks,
+            bank_forks_t,
             cluster_info,
             poh_recorder,
             mut tower,
@@ -623,6 +623,7 @@ impl ReplayStage {
             popular_pruned_forks_receiver,
             alpenglow_vote_receiver,
         } = receivers;
+        let bank_forks = bank_forks_t.bank_forks.clone();
 
         trace!("replay stage");
 
@@ -676,7 +677,7 @@ impl ReplayStage {
                 vote_history_storage,
                 authorized_voter_keypairs: authorized_voter_keypairs.clone(),
                 blockstore: blockstore.clone(),
-                bank_forks: bank_forks.clone(),
+                bank_forks_t: bank_forks_t.clone(),
                 cluster_info: cluster_info.clone(),
                 leader_schedule_cache: leader_schedule_cache.clone(),
                 rpc_subscriptions: rpc_subscriptions.clone(),
@@ -1109,7 +1110,7 @@ impl ReplayStage {
                         if let Err(e) = Self::handle_votable_bank(
                             vote_bank,
                             switch_fork_decision,
-                            &bank_forks,
+                            &bank_forks_t,
                             &mut tower,
                             &mut progress,
                             &vote_account,
@@ -2644,7 +2645,7 @@ impl ReplayStage {
     fn handle_votable_bank(
         bank: &Arc<Bank>,
         switch_fork_decision: &SwitchForkDecision,
-        bank_forks: &Arc<RwLock<BankForks>>,
+        bank_forks: &Arc<BankForksT>,
         tower: &mut Tower,
         progress: &mut ProgressMap,
         vote_account_pubkey: &Pubkey,
@@ -2675,7 +2676,7 @@ impl ReplayStage {
         if let Some(new_root) = new_root {
             if first_alpenglow_slot.is_none() {
                 *first_alpenglow_slot = bank_forks
-                    .read()
+                    .read(3)
                     .unwrap()
                     .root_bank()
                     .feature_set
@@ -2709,6 +2710,7 @@ impl ReplayStage {
                 vote_signatures,
                 drop_bank_sender,
                 Some(tbft_structs),
+                3,
             )?;
         }
 
@@ -2732,7 +2734,7 @@ impl ReplayStage {
         let node_vote_state = (*vote_account_pubkey, tower.vote_state.clone());
         Self::update_commitment_cache(
             bank.clone(),
-            bank_forks.read().unwrap().root(),
+            bank_forks.read(3).unwrap().root(),
             progress.get_fork_stats(bank.slot()).unwrap().total_stake,
             node_vote_state,
             lockouts_sender,
@@ -4325,7 +4327,7 @@ impl ReplayStage {
         my_pubkey: &Pubkey,
         parent_slot: Slot,
         new_root: Slot,
-        bank_forks: &RwLock<BankForks>,
+        bank_forks: &BankForksT,
         progress: &mut ProgressMap,
         blockstore: &Blockstore,
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
@@ -4337,10 +4339,11 @@ impl ReplayStage {
         voted_signatures: &mut Vec<Signature>,
         drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
         tbft_structs: Option<&mut TowerBFTStructures>,
+        requester_id: usize,
     ) -> Result<(), SetRootError> {
         // get the root bank before squash
         let root_bank = bank_forks
-            .read()
+            .read(requester_id)
             .unwrap()
             .get(new_root)
             .expect("Root bank doesn't exist");
@@ -4376,6 +4379,7 @@ impl ReplayStage {
             voted_signatures,
             drop_bank_sender,
             tbft_structs,
+            requester_id,
         )?;
         blockstore.slots_stats.mark_rooted(new_root);
         rpc_subscriptions.notify_roots(rooted_slots);
@@ -4399,7 +4403,7 @@ impl ReplayStage {
     #[allow(clippy::too_many_arguments)]
     pub fn handle_new_root(
         new_root: Slot,
-        bank_forks: &RwLock<BankForks>,
+        bank_forks: &BankForksT,
         progress: &mut ProgressMap,
         accounts_background_request_sender: &AbsRequestSender,
         highest_super_majority_root: Option<Slot>,
@@ -4407,9 +4411,13 @@ impl ReplayStage {
         voted_signatures: &mut Vec<Signature>,
         drop_bank_sender: &Sender<Vec<BankWithScheduler>>,
         tbft_structs: Option<&mut TowerBFTStructures>,
+        requester_id: usize,
     ) -> Result<(), SetRootError> {
-        bank_forks.read().unwrap().prune_program_cache(new_root);
-        let removed_banks = bank_forks.write().unwrap().set_root(
+        bank_forks
+            .read(requester_id)
+            .unwrap()
+            .prune_program_cache(new_root);
+        let removed_banks = bank_forks.write(requester_id).unwrap().set_root(
             new_root,
             accounts_background_request_sender,
             highest_super_majority_root,
@@ -4421,7 +4429,7 @@ impl ReplayStage {
 
         // Dropping the bank_forks write lock and reacquiring as a read lock is
         // safe because updates to bank_forks are only made by a single thread.
-        let r_bank_forks = bank_forks.read().unwrap();
+        let r_bank_forks = bank_forks.read(requester_id).unwrap();
         let new_root_bank = &r_bank_forks[new_root];
         if !*has_new_vote_been_rooted {
             for signature in voted_signatures.iter() {

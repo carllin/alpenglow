@@ -84,9 +84,13 @@ pub struct VoteHistory {
 
 impl VoteHistory {
     pub fn len(&self) -> usize {
-        self.voted.len() + self.voted_notar.len()
-            + self.voted_notar_fallback.len() + self.voted_skip_fallback.len()
-            + self.skipped.len() + self.its_over.len() + self.votes_cast.len()
+        self.voted.len()
+            + self.voted_notar.len()
+            + self.voted_notar_fallback.len()
+            + self.voted_skip_fallback.len()
+            + self.skipped.len()
+            + self.its_over.len()
+            + self.votes_cast.len()
     }
 
     pub fn new(node_pubkey: Pubkey, root: Slot) -> Self {

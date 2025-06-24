@@ -21,7 +21,7 @@ use {
     solana_runtime::{
         accounts_background_service::AbsRequestSender,
         bank::Bank,
-        bank_forks::BankForks,
+        bank_forks::{BankForks, BankForksT},
         genesis_utils::{
             create_genesis_config_with_vote_accounts, GenesisConfigInfo, ValidatorVoteKeypairs,
         },
@@ -239,9 +239,10 @@ impl VoteSimulator {
 
     pub fn set_root(&mut self, new_root: Slot) {
         let (drop_bank_sender, _drop_bank_receiver) = unbounded();
+        let bank_forks_t = Arc::new(BankForksT::new(self.bank_forks.clone()));
         ReplayStage::handle_new_root(
             new_root,
-            &self.bank_forks,
+            &bank_forks_t,
             &mut self.progress,
             &AbsRequestSender::default(),
             None,
@@ -249,6 +250,7 @@ impl VoteSimulator {
             &mut Vec::new(),
             &drop_bank_sender,
             Some(&mut self.tbft_structs),
+            9,
         )
         .unwrap();
     }

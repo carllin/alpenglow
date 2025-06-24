@@ -41,7 +41,7 @@ use {
         rpc_subscriptions::RpcSubscriptions,
     },
     solana_runtime::{
-        accounts_background_service::AbsRequestSender, bank::Bank, bank_forks::BankForks,
+        accounts_background_service::AbsRequestSender, bank::Bank, bank_forks::BankForksT,
         installed_scheduler_pool::BankWithScheduler, root_bank_cache::RootBankCache,
         vote_sender_types::AlpenglowVoteReceiver as VoteReceiver,
     },
@@ -80,7 +80,7 @@ pub struct VotingLoopConfig {
     // Shared state
     pub authorized_voter_keypairs: Arc<RwLock<Vec<Arc<Keypair>>>>,
     pub blockstore: Arc<Blockstore>,
-    pub bank_forks: Arc<RwLock<BankForks>>,
+    pub bank_forks_t: Arc<BankForksT>,
     pub cluster_info: Arc<ClusterInfo>,
     pub leader_schedule_cache: Arc<LeaderScheduleCache>,
     pub rpc_subscriptions: Arc<RpcSubscriptions>,
@@ -116,7 +116,7 @@ struct VotingContext {
 struct SharedContext {
     blockstore: Arc<Blockstore>,
     leader_schedule_cache: Arc<LeaderScheduleCache>,
-    bank_forks: Arc<RwLock<BankForks>>,
+    bank_forks_t: Arc<BankForksT>,
     rpc_subscriptions: Arc<RpcSubscriptions>,
     vote_receiver: VoteReceiver,
     // TODO(ashwin): share this with replay (currently empty)
@@ -175,7 +175,7 @@ impl VotingLoop {
             vote_history_storage: _, // TODO: set-identity
             authorized_voter_keypairs,
             blockstore,
-            bank_forks,
+            bank_forks_t,
             cluster_info,
             leader_schedule_cache,
             rpc_subscriptions,
@@ -189,6 +189,7 @@ impl VotingLoop {
             completed_block_receiver,
             vote_receiver,
         } = config;
+        let bank_forks = bank_forks_t.bank_forks.clone();
 
         let _exit = Finalizer::new(exit.clone());
         let mut root_bank_cache = RootBankCache::new(bank_forks.clone());
@@ -241,7 +242,7 @@ impl VotingLoop {
         let mut shared_context = SharedContext {
             blockstore: blockstore.clone(),
             leader_schedule_cache: leader_schedule_cache.clone(),
-            bank_forks: bank_forks.clone(),
+            bank_forks_t: bank_forks_t.clone(),
             rpc_subscriptions: rpc_subscriptions.clone(),
             vote_receiver,
             progress: ProgressMap::default(),
@@ -259,12 +260,28 @@ impl VotingLoop {
                     ("progress_map_len", shared_context.progress.len(), i64),
                     ("vote_history_len", voting_context.vote_history.len(), i64),
                     ("voting_sender_len", voting_context.voting_sender.len(), i64),
-                    ("commitment_sender_len", voting_context.commitment_sender.len(), i64),
+                    (
+                        "commitment_sender_len",
+                        voting_context.commitment_sender.len(),
+                        i64
+                    ),
                     ("cert_pool_vote_pools_len", cert_pool.len_vote_pools(), i64),
-                    ("cert_pool_completed_certs_len", cert_pool.len_completed_certs(), i64),
-                    ("cert_pool_parent_ready_tracker_len", cert_pool.len_parent_ready_tracker(), i64),
+                    (
+                        "cert_pool_completed_certs_len",
+                        cert_pool.len_completed_certs(),
+                        i64
+                    ),
+                    (
+                        "cert_pool_parent_ready_tracker_len",
+                        cert_pool.len_parent_ready_tracker(),
+                        i64
+                    ),
                     ("pending_blocks_len", pending_blocks.len(), i64),
-                    ("voted_signatures_len", voting_context.voted_signatures.len(), i64),
+                    (
+                        "voted_signatures_len",
+                        voting_context.voted_signatures.len(),
+                        i64
+                    ),
                 );
 
                 last_stats_report = Instant::now();
@@ -490,17 +507,17 @@ impl VotingLoop {
             ctx.my_pubkey
         );
         let new_root = (old_root + 1..=slot).rev().find(|slot| {
-            cert_pool.is_finalized(*slot) && ctx.bank_forks.read().unwrap().is_frozen(*slot)
+            cert_pool.is_finalized(*slot) && ctx.bank_forks_t.read(2).unwrap().is_frozen(*slot)
         })?;
         trace!("{}: Attempting to set new root {new_root}", ctx.my_pubkey);
         vctx.vote_history.set_root(new_root);
-        cert_pool.handle_new_root(ctx.bank_forks.read().unwrap().get(new_root).unwrap());
+        cert_pool.handle_new_root(ctx.bank_forks_t.read(2).unwrap().get(new_root).unwrap());
         *pending_blocks = pending_blocks.split_off(&new_root);
         if let Err(e) = ReplayStage::check_and_handle_new_root(
             &ctx.my_pubkey,
             slot,
             new_root,
-            ctx.bank_forks.as_ref(),
+            ctx.bank_forks_t.as_ref(),
             &mut ctx.progress,
             ctx.blockstore.as_ref(),
             &ctx.leader_schedule_cache,
@@ -512,13 +529,19 @@ impl VotingLoop {
             &mut vctx.voted_signatures,
             drop_bank_sender,
             None,
+            2,
         ) {
             error!("Unable to set root: {e:?}");
             return None;
         }
 
         // Distinguish between duplicate versions of same slot
-        let hash = ctx.bank_forks.read().unwrap().bank_hash(new_root).unwrap();
+        let hash = ctx
+            .bank_forks_t
+            .read(2)
+            .unwrap()
+            .bank_hash(new_root)
+            .unwrap();
         if let Err(e) =
             ctx.blockstore
                 .insert_optimistic_slot(new_root, &hash, timestamp().try_into().unwrap())

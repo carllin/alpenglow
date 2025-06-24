@@ -46,7 +46,7 @@ use {
     },
     solana_runtime::{
         accounts_background_service::AbsRequestSender,
-        bank_forks::BankForks,
+        bank_forks::BankForksT,
         commitment::BlockCommitmentCache,
         prioritization_fee_cache::PrioritizationFeeCache,
         vote_sender_types::{AlpenglowVoteReceiver, AlpenglowVoteSender, ReplayVoteSender},
@@ -124,7 +124,7 @@ impl Tvu {
     pub fn new(
         vote_account: &Pubkey,
         authorized_voter_keypairs: Arc<RwLock<Vec<Arc<Keypair>>>>,
-        bank_forks: &Arc<RwLock<BankForks>>,
+        bank_forks_t: &Arc<BankForksT>,
         cluster_info: &Arc<ClusterInfo>,
         sockets: TvuSockets,
         blockstore: Arc<Blockstore>,
@@ -177,6 +177,7 @@ impl Tvu {
         voting_service_additional_listeners: Option<&Vec<SocketAddr>>,
     ) -> Result<Self, String> {
         let in_wen_restart = wen_restart_repair_slots.is_some();
+        let bank_forks = bank_forks_t.bank_forks.clone();
 
         let TvuSockets {
             repair: repair_socket,
@@ -338,7 +339,7 @@ impl Tvu {
             replay_forks_threads: tvu_config.replay_forks_threads,
             replay_transactions_threads: tvu_config.replay_transactions_threads,
             blockstore: blockstore.clone(),
-            bank_forks: bank_forks.clone(),
+            bank_forks_t: bank_forks_t.clone(),
             cluster_info: cluster_info.clone(),
             poh_recorder: poh_recorder.clone(),
             tower,

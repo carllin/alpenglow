@@ -57,7 +57,7 @@ impl ParentReadyTracker {
     pub fn len(&self) -> usize {
         self.slot_statuses.len()
     }
-    
+
     /// Creates a new tracker with the root bank as implicitely notarized fallback
     pub fn new(my_pubkey: Pubkey, root_block @ (root_slot, _, _): Block) -> Self {
         let mut slot_statuses = HashMap::new();

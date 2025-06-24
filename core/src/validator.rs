@@ -108,7 +108,7 @@ use {
             PrunedBanksRequestHandler, SnapshotRequestHandler,
         },
         bank::Bank,
-        bank_forks::BankForks,
+        bank_forks::{BankForks, BankForksT},
         commitment::BlockCommitmentCache,
         prioritization_fee_cache::PrioritizationFeeCache,
         runtime_config::RuntimeConfig,
@@ -811,7 +811,7 @@ impl Validator {
             PohTimingReportService::new(poh_timing_point_receiver, exit.clone());
 
         let (
-            bank_forks,
+            bank_forks_t,
             blockstore,
             original_blockstore_root,
             ledger_signal_receiver,
@@ -841,6 +841,7 @@ impl Validator {
             Some(poh_timing_point_sender.clone()),
         )
         .map_err(ValidatorError::Other)?;
+        let bank_forks = bank_forks_t.bank_forks.clone();
 
         if !config.no_poh_speed_test {
             check_poh_speed(&bank_forks.read().unwrap().root_bank(), None)?;
@@ -1359,7 +1360,7 @@ impl Validator {
             exit: exit.clone(),
             wait_for_vote_to_start_leader,
             track_transaction_indexes: transaction_status_sender.is_some(),
-            bank_forks: bank_forks.clone(),
+            bank_forks: bank_forks_t.clone(),
             blockstore: blockstore.clone(),
             cluster_info: cluster_info.clone(),
             poh_recorder: poh_recorder.clone(),
@@ -1543,7 +1544,7 @@ impl Validator {
         let tvu = Tvu::new(
             vote_account,
             authorized_voter_keypairs,
-            &bank_forks,
+            &bank_forks_t,
             &cluster_info,
             TvuSockets {
                 repair: node.sockets.repair.try_clone().unwrap(),
@@ -2154,7 +2155,7 @@ fn load_blockstore(
     poh_timing_point_sender: Option<PohTimingSender>,
 ) -> Result<
     (
-        Arc<RwLock<BankForks>>,
+        Arc<BankForksT>,
         Arc<Blockstore>,
         Slot,
         Receiver<bool>,
@@ -2254,7 +2255,7 @@ fn load_blockstore(
     }
 
     Ok((
-        bank_forks,
+        Arc::new(BankForksT::new(bank_forks)),
         blockstore,
         original_blockstore_root,
         ledger_signal_receiver,
