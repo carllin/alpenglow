@@ -707,7 +707,7 @@ impl HashOverrides {
         self.hashes.get(&slot)
     }
 
-    fn get_blockhash_override(&self, slot: Slot) -> Option<&Hash> {
+    fn _get_blockhash_override(&self, slot: Slot) -> Option<&Hash> {
         self.get_hash_override(slot)
             .map(|hash_override| &hash_override.blockhash)
     }
@@ -1267,7 +1267,7 @@ impl Bank {
         let mut time = Measure::start("bank::new_from_parent");
         let NewBankOptions { vote_only_bank } = new_bank_options;
 
-        parent.freeze();
+        parent.freeze_from_new_parent();
         assert_ne!(slot, parent.slot());
 
         let epoch_schedule = parent.epoch_schedule().clone();
@@ -1536,11 +1536,10 @@ impl Bank {
     }
 
     pub fn prune_program_cache(&self, new_root_slot: Slot, new_root_epoch: Epoch) {
-        self.transaction_processor
-            .program_cache
-            .write()
-            .unwrap()
-            .prune(new_root_slot, new_root_epoch);
+        info!("#BW: Acquiring program cache write lock to prune");
+        let mut pcl = self.transaction_processor.program_cache.write().unwrap();
+        info!("#BW: Acquired program cache write lock to prune");
+        pcl.prune(new_root_slot, new_root_epoch);
     }
 
     pub fn prune_program_cache_by_deployment_slot(&self, deployment_slot: Slot) {
@@ -2555,7 +2554,9 @@ impl Bank {
             .flatten()
         };
 
+        info!("Rehashing bank at slot {} getting hash write lock", self.slot());
         let mut hash = self.hash.write().unwrap();
+        info!("Rehashing bank at slot {} acquired hash write lock", self.slot());
         let curr_accounts_delta_hash = get_delta_hash();
         let new = self.hash_internal_state();
         if let Some(curr_accounts_delta_hash) = curr_accounts_delta_hash {
@@ -2571,6 +2572,21 @@ impl Bank {
         }
     }
 
+    pub fn freeze_from_squash(&self) {
+        info!("Freezing bank at slot {} from squash", self.slot());
+        self.freeze();
+    }
+
+    pub fn freeze_from_process_replay_results(&self) {
+        info!("Freezing bank at slot {} from process_replay_results", self.slot());
+        self.freeze();
+    }
+
+    pub fn freeze_from_new_parent(&self) {
+        info!("Freezing bank at slot {} from new parent", self.slot());
+        self.freeze();
+    }
+
     pub fn freeze(&self) {
         // This lock prevents any new commits from BankingStage
         // `Consumer::execute_and_commit_transactions_locked()` from
@@ -2583,7 +2599,9 @@ impl Bank {
         // BankingStage doesn't release this hash lock until both
         // record and commit are finished, those transactions will be
         // committed before this write lock can be obtained here.
+        info!("Freezing bank at slot {} getting hash write lock", self.slot());
         let mut hash = self.hash.write().unwrap();
+        info!("Freeze bank at slot {} acquired hash write lock", self.slot());
         if *hash == Hash::default() {
             // finish up any deferred changes to account state
             self.collect_rent_eagerly();
@@ -2648,7 +2666,7 @@ impl Bank {
     /// by multiple threads, the end result could be inconsistent.
     /// Calling code does not currently call this concurrently.
     pub fn squash(&self) -> SquashTiming {
-        self.freeze();
+        self.freeze_from_squash();
 
         //this bank and all its parents are now on the rooted path
         let mut roots = vec![self.slot()];
@@ -2982,14 +3000,18 @@ impl Bank {
     fn register_recent_blockhash(&self, blockhash: &Hash, scheduler: &InstalledSchedulerRwLock) {
         // This is needed because recent_blockhash updates necessitate synchronizations for
         // consistent tx check_age handling.
+        info!("#BW: waiting for paused scheduler");
         BankWithScheduler::wait_for_paused_scheduler(self, scheduler);
+        info!("#BW: scheduler paused");
 
         // Only acquire the write lock for the blockhash queue on block boundaries because
         // readers can starve this write lock acquisition and ticks would be slowed down too
         // much if the write lock is acquired for each tick.
+        info!("#BW: acquiring blockhash queue write lock");
         let mut w_blockhash_queue = self.blockhash_queue.write().unwrap();
+        info!("#BW: acquired blockhash queue write lock");
 
-        #[cfg(feature = "dev-context-only-utils")]
+        /*#[cfg(feature = "dev-context-only-utils")]
         let blockhash_override = self
             .hash_overrides
             .lock()
@@ -3007,7 +3029,7 @@ impl Bank {
                 }
             });
         #[cfg(feature = "dev-context-only-utils")]
-        let blockhash = blockhash_override.as_ref().unwrap_or(blockhash);
+        let blockhash = blockhash_override.as_ref().unwrap_or(blockhash);*/
 
         w_blockhash_queue.register_hash(blockhash, self.fee_rate_governor.lamports_per_signature);
         self.update_recent_blockhashes_locked(&w_blockhash_queue);
@@ -4593,6 +4615,7 @@ impl Bank {
             timings,
         );
         drop(freeze_lock);
+        info!("#BW execute_batch dropped the freeze lock");
         let post_balances = if collect_balances {
             self.collect_balances(batch)
         } else {

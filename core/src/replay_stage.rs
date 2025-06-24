@@ -814,7 +814,7 @@ impl ReplayStage {
                     Measure::start("generate_new_bank_forks_time");
                 Self::generate_new_bank_forks(
                     &blockstore,
-                    &bank_forks,
+                    &bank_forks_t,
                     &leader_schedule_cache,
                     &rpc_subscriptions,
                     &slot_status_notifier,
@@ -3529,7 +3529,7 @@ impl ReplayStage {
                 if let Some(transaction_status_sender) = transaction_status_sender {
                     transaction_status_sender.send_transaction_status_freeze_message(bank);
                 }
-                bank.freeze();
+                bank.freeze_from_process_replay_results();
                 datapoint_info!(
                     "bank_frozen",
                     ("slot", bank_slot, i64),
@@ -4468,7 +4468,7 @@ impl ReplayStage {
 
     fn generate_new_bank_forks(
         blockstore: &Blockstore,
-        bank_forks: &RwLock<BankForks>,
+        bank_forks: &BankForksT,
         leader_schedule_cache: &Arc<LeaderScheduleCache>,
         rpc_subscriptions: &Arc<RpcSubscriptions>,
         slot_status_notifier: &Option<SlotStatusNotifier>,
@@ -4478,7 +4478,7 @@ impl ReplayStage {
         // Find the next slot that chains to the old slot
         let mut generate_new_bank_forks_read_lock =
             Measure::start("generate_new_bank_forks_read_lock");
-        let forks = bank_forks.read().unwrap();
+        let forks = bank_forks.read(3).unwrap();
         generate_new_bank_forks_read_lock.stop();
 
         let frozen_banks = forks.frozen_banks();
@@ -4547,7 +4547,7 @@ impl ReplayStage {
 
         let mut generate_new_bank_forks_write_lock =
             Measure::start("generate_new_bank_forks_write_lock");
-        let mut forks = bank_forks.write().unwrap();
+        let mut forks = bank_forks.write(3).unwrap();
         let root = forks.root();
         for (slot, bank) in new_banks {
             if slot < root {

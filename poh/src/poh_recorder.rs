@@ -218,10 +218,15 @@ impl TransactionRecorder {
         }
         // Besides validator exit, this timeout should primarily be seen to affect test execution environments where the various pieces can be shutdown abruptly
         let mut is_exited = false;
+        let mut timeouts = 0;
         loop {
             let res = result_receiver.recv_timeout(Duration::from_millis(1000));
             match res {
                 Err(RecvTimeoutError::Timeout) => {
+                    timeouts += 1;
+                    if timeouts > 10 {
+                        panic!("#BW: PohRecorder::record() timed out 10 times, panicking");
+                    }
                     if is_exited {
                         return Err(PohRecorderError::MaxHeightReached);
                     } else {
@@ -490,7 +495,9 @@ impl PohRecorder {
                 return Err(PohRecorderError::MaxHeightReached);
             }
 
+            info!("#BW: PohRecorder::record: acquiring poh lock for slot {}", bank_slot);
             let (mut poh_lock, poh_lock_us) = measure_us!(self.poh.lock().unwrap());
+            info!("#BW: PohRecorder::record: acquired poh lock for slot {}", bank_slot);
             self.metrics.record_lock_contention_us += poh_lock_us;
 
             let (record_mixin_res, record_mixin_us) = measure_us!(poh_lock.record(mixin));

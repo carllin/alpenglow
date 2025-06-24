@@ -1,6 +1,6 @@
 use {
     crate::invoke_context::{BuiltinFunctionWithContext, InvokeContext},
-    log::{debug, error, log_enabled, trace},
+    log::{debug, error, info, log_enabled, trace},
     percentage::PercentageInteger,
     solana_clock::{Epoch, Slot},
     solana_pubkey::Pubkey,
@@ -948,10 +948,12 @@ impl<FG: ForkGraph> ProgramCache<FG> {
             return;
         };
         let fork_graph = fork_graph.upgrade().unwrap();
+        info!("#BW: prune acquiring fork_graph read lock");
         let Ok(fork_graph) = fork_graph.read() else {
             error!("Failed to lock fork graph for reading.");
             return;
         };
+        info!("#BW: prune acquired fork_graph read lock");
         let mut preparation_phase_ends = false;
         if self.latest_root_epoch != new_root_epoch {
             self.latest_root_epoch = new_root_epoch;

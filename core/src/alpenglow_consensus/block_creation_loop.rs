@@ -120,11 +120,14 @@ fn start_receive_and_record_loop(
             Ok(record) => {
                 if record
                     .sender
-                    .send(poh_recorder.write().unwrap().record(
-                        record.slot,
-                        record.mixin,
-                        record.transactions,
-                    ))
+                    .send({
+                        let mut poh_rec_wl = poh_recorder.write().unwrap();
+                        poh_rec_wl.record(
+                            record.slot,
+                            record.mixin,
+                            record.transactions,
+                        )
+                    })
                     .is_err()
                 {
                     panic!("Error returning mixin hash");
