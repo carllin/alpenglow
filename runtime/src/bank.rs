@@ -1074,6 +1074,12 @@ impl AtomicBankHashStats {
     }
 }
 
+impl Drop for Bank {
+    fn drop(&mut self) {
+        info!("#BW: Dropping Bank {}", self.slot());
+    }
+}
+
 impl Bank {
     fn default_with_accounts(accounts: Accounts) -> Self {
         let mut bank = Self {

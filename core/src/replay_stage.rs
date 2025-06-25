@@ -4414,13 +4414,9 @@ impl ReplayStage {
         requester_id: usize,
     ) -> Result<(), SetRootError> {
         let bf_rl = bank_forks.read(requester_id).unwrap();
-        if let Some(root_bank) = bf_rl.banks.get(&new_root) {
-            let x = root_bank.clone_without_scheduler();
-            drop(bf_rl);
-            x.prune_program_cache(new_root, x.epoch());
-        } else {
-            drop(bf_rl);
-        };
+        let root_bank = bf_rl.get(new_root).expect("Root bank must exist");
+        drop(bf_rl);
+        root_bank.prune_program_cache(new_root, root_bank.epoch());
 
         let removed_banks = bank_forks.write(requester_id).unwrap().set_root(
             new_root,
