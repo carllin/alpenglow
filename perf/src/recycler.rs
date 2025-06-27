@@ -1,8 +1,11 @@
 use {
     rand::{thread_rng, Rng},
-    std::sync::{
-        atomic::{AtomicBool, AtomicUsize, Ordering},
-        Arc, Mutex, Weak,
+    solana_time_utils::AtomicInterval,
+    std::{
+        sync::{
+            atomic::{AtomicBool, AtomicUsize, Ordering},
+            Arc, Mutex, Weak,
+        },
     },
 };
 
@@ -42,6 +45,7 @@ pub struct RecyclerX<T> {
     id: usize,
     // Shrink window times the exponential moving average size of gc.len().
     size_factor: AtomicUsize,
+    last_report: AtomicInterval,
 }
 
 impl<T: Default> Default for RecyclerX<T> {
@@ -53,6 +57,7 @@ impl<T: Default> Default for RecyclerX<T> {
             stats: RecyclerStats::default(),
             id,
             size_factor: AtomicUsize::default(),
+            last_report: AtomicInterval::default(),
         }
     }
 }
@@ -145,6 +150,23 @@ impl<T: Default + Reset + Sized> Recycler<T> {
             self.recycler.stats.reuse.load(Ordering::Relaxed),
             self.recycler.stats.max_gc.load(Ordering::Relaxed),
         );
+        if self.recycler.last_report.should_update(1000) {
+            let total = self.recycler.stats.total.load(Ordering::Relaxed);
+            let reuse = self.recycler.stats.reuse.load(Ordering::Relaxed);
+            let freed = self.recycler.stats.freed.load(Ordering::Relaxed);
+            datapoint_info!(
+                "recycler_allocate",
+                (
+                    "gc_len",
+                    self.recycler.stats.max_gc.load(Ordering::Relaxed) as i64,
+                    i64
+                ),
+                ("total", total as i64, i64),
+                ("freed", freed as i64, i64),
+                ("reuse", reuse as i64, i64),
+                ("caller", name, String),
+            );
+        }
 
         let mut t = T::default();
         t.set_recycler(Arc::downgrade(&self.recycler));
@@ -184,16 +206,18 @@ impl<T: Default + Reset> RecyclerX<T> {
                 Ordering::Relaxed,
             );
         }
-        let total = self.stats.total.load(Ordering::Relaxed);
-        let reuse = self.stats.reuse.load(Ordering::Relaxed);
-        let freed = self.stats.freed.load(Ordering::Relaxed);
-        datapoint_debug!(
-            "recycler",
-            ("gc_len", len as i64, i64),
-            ("total", total as i64, i64),
-            ("freed", freed as i64, i64),
-            ("reuse", reuse as i64, i64),
-        );
+        if self.last_report.should_update(1000) {
+            let total = self.stats.total.load(Ordering::Relaxed);
+            let reuse = self.stats.reuse.load(Ordering::Relaxed);
+            let freed = self.stats.freed.load(Ordering::Relaxed);
+            datapoint_info!(
+                "recycler_recycle",
+                ("gc_len", len as i64, i64),
+                ("total", total as i64, i64),
+                ("freed", freed as i64, i64),
+                ("reuse", reuse as i64, i64),
+            );
+        }
     }
 }
 
